@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "250628127340",
+    "project_id": "janta-kirana-store",
+    "storage_bucket": "janta-kirana-store.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:250628127340:android:4468465c3ee8057bc67649",
+        "android_client_info": {
+          "package_name": "com.jantakirana.store"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA1x1ctO2YiCh-R7o6_cCmMkbOhRVb79BY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
