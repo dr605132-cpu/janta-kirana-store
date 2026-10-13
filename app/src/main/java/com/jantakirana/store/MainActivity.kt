@@ -1,369 +1,868 @@
+
 package com.jantakirana.store
 
 import android.app.Activity
 import android.os.Bundle
+import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import android.widget.*
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : Activity() {
 
     private val bg = Color.rgb(8, 11, 16)
-    private val card = Color.rgb(19, 27, 38)
+    private val card = Color.rgb(20, 29, 41)
     private val red = Color.rgb(245, 25, 48)
     private val white = Color.WHITE
-    private val muted = Color.rgb(160, 172, 188)
+    private val muted = Color.rgb(165, 178, 192)
+
+    private val prefs by lazy {
+        getSharedPreferences("janta_store_data", MODE_PRIVATE)
+    }
+
     private lateinit var root: LinearLayout
+    private lateinit var content: LinearLayout
+
+    private data class Product(
+        val id: String,
+        var name: String,
+        var barcode: String,
+        var buy: Double,
+        var sell: Double,
+        var qty: Int
+    )
+
+    private val products = mutableListOf<Product>()
+    private val cart = linkedMapOf<String, Int>()
+    private val sales = mutableListOf<JSONObject>()
+    private val orders = mutableListOf<JSONObject>()
+
+    private var storeName = "Janta Kirana Store"
+    private var lowStockLimit = 5
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        loadData()
         showHome()
     }
 
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
+    private fun dp(n: Int) =
+        (n * resources.displayMetrics.density).toInt()
 
-    private fun rounded(color: Int, radius: Int = 16): GradientDrawable {
-        return GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(radius).toFloat()
+    private fun money(n: Double) =
+        "₹" + String.format(Locale.US, "%.2f", n)
+
+    private fun now() = System.currentTimeMillis()
+
+    private fun date(ts: Long): String =
+        SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+            .format(Date(ts))
+
+    private fun panel(): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(card)
+            cornerRadius = dp(15).toFloat()
         }
-    }
 
-    private fun text(
+    private fun label(
         value: String,
-        size: Float,
+        size: Float = 15f,
         color: Int = white,
         bold: Boolean = false
-    ): TextView {
-        return TextView(this).apply {
-            text = value
-            textSize = size
-            setTextColor(color)
-            if (bold) setTypeface(null, Typeface.BOLD)
-        }
+    ) = TextView(this).apply {
+        text = value
+        textSize = size
+        setTextColor(color)
+        if (bold) setTypeface(null, Typeface.BOLD)
+        setPadding(dp(2), dp(5), dp(2), dp(5))
     }
 
-    private fun gap(height: Int): View =
-        View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(1, dp(height))
+    private fun gap(n: Int) = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(1, dp(n))
+    }
+
+    private fun vertical() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+    }
+
+    private fun loadData() {
+        storeName = prefs.getString("store_name", "Janta Kirana Store")
+            ?: "Janta Kirana Store"
+        lowStockLimit = prefs.getInt("low_stock", 5)
+
+        products.clear()
+        val p = JSONArray(prefs.getString("products", "[]"))
+        for (i in 0 until p.length()) {
+            val o = p.getJSONObject(i)
+            products.add(
+                Product(
+                    o.optString("id"),
+                    o.optString("name"),
+                    o.optString("barcode"),
+                    o.optDouble("buy"),
+                    o.optDouble("sell"),
+                    o.optInt("qty")
+                )
+            )
         }
 
-    private fun column(): LinearLayout =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        sales.clear()
+        val s = JSONArray(prefs.getString("sales", "[]"))
+        for (i in 0 until s.length()) sales.add(s.getJSONObject(i))
+
+        orders.clear()
+        val d = JSONArray(prefs.getString("orders", "[]"))
+        for (i in 0 until d.length()) orders.add(d.getJSONObject(i))
+    }
+
+    private fun saveData() {
+        val p = JSONArray()
+        products.forEach {
+            p.put(JSONObject().apply {
+                put("id", it.id)
+                put("name", it.name)
+                put("barcode", it.barcode)
+                put("buy", it.buy)
+                put("sell", it.sell)
+                put("qty", it.qty)
+            })
         }
 
-    private fun base(title: String, subtitle: String = "") {
-        root = column().apply {
-            setBackgroundColor(bg)
+        val s = JSONArray()
+        sales.forEach { s.put(it) }
+
+        val d = JSONArray()
+        orders.forEach { d.put(it) }
+
+        prefs.edit()
+            .putString("products", p.toString())
+            .putString("sales", s.toString())
+            .putString("orders", d.toString())
+            .putString("store_name", storeName)
+            .putInt("low_stock", lowStockLimit)
+            .apply()
+    }
+
+    private fun openScreen(title: String, subtitle: String = "") {
+        root = vertical().apply { setBackgroundColor(bg) }
+
+        val header = vertical().apply {
+            setPadding(dp(18), dp(20), dp(18), dp(10))
         }
-
-        val header = column().apply {
-            setPadding(dp(20), dp(22), dp(20), dp(16))
-        }
-
-        header.addView(text("🛒  JANTA KIRANA STORE", 20f, white, true))
-        header.addView(gap(5))
-
+        header.addView(label("🛒  $storeName", 19f, white, true))
         if (subtitle.isNotEmpty()) {
-            header.addView(text(subtitle, 12f, muted))
+            header.addView(label(subtitle, 11f, muted))
         }
-
         root.addView(header)
 
-        val content = column().apply {
-            setPadding(dp(18), dp(4), dp(18), dp(18))
+        val scroll = ScrollView(this)
+        content = vertical().apply {
+            setPadding(dp(16), dp(10), dp(16), dp(20))
         }
-
-        content.addView(text(title, 25f, white, true))
-        content.addView(gap(14))
-
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(content)
-        }
-
+        scroll.addView(content)
         root.addView(
             scroll,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
+            LinearLayout.LayoutParams(-1, 0, 1f)
         )
 
         val nav = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(4), dp(9), dp(4), dp(9))
             setBackgroundColor(Color.rgb(13, 18, 26))
         }
 
-        addNav(nav, "⌂\nHome") { showHome() }
-        addNav(nav, "▣\nStock") { showStock() }
-        addNav(nav, "₹\nBilling") { showBilling() }
-        addNav(nav, "▤\nOrders") { showOrders() }
-        addNav(nav, "•••\nMore") { showMore() }
+        listOf(
+            "⌂\nHome", "▣\nStock", "₹\nBilling",
+            "▤\nOrders", "•••\nMore"
+        ).forEachIndexed { index, name ->
+            val t = label(
+                name, 11f,
+                if (title == listOf(
+                    "Dashboard", "Inventory", "Billing",
+                    "Delivery Orders", "More"
+                )[index]) red else muted,
+                true
+            )
+            t.gravity = Gravity.CENTER
+            t.setOnClickListener {
+                when (index) {
+                    0 -> showHome()
+                    1 -> showStock()
+                    2 -> showBilling()
+                    3 -> showOrders()
+                    else -> showMore()
+                }
+            }
+            nav.addView(t, LinearLayout.LayoutParams(0, dp(53), 1f))
+        }
 
         root.addView(nav)
         setContentView(root)
     }
 
-    private fun addNav(
-        nav: LinearLayout,
-        label: String,
+    private fun button(
+        parent: LinearLayout,
+        title: String,
         action: () -> Unit
     ) {
-        val item = text(label, 12f, muted, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(2), dp(5), dp(2), dp(5))
+        val t = label(title, 15f, white, true).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(13), dp(12), dp(13))
+            background = GradientDrawable().apply {
+                setColor(red)
+                cornerRadius = dp(11).toFloat()
+            }
             isClickable = true
             setOnClickListener { action() }
         }
-
-        nav.addView(
-            item,
-            LinearLayout.LayoutParams(0, dp(48), 1f)
+        parent.addView(
+            t,
+            LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(9)
+            }
         )
     }
 
-    private fun addCard(
+    private fun section(parent: LinearLayout, title: String) {
+        parent.addView(gap(12))
+        parent.addView(label(title, 18f, white, true))
+        parent.addView(gap(5))
+    }
+
+    private fun infoCard(
         parent: LinearLayout,
         title: String,
         value: String,
-        detail: String,
-        accent: Int = red
+        note: String
     ) {
-        val box = column().apply {
-            setPadding(dp(14), dp(14), dp(12), dp(14))
-            background = rounded(card)
+        val box = vertical().apply {
+            setPadding(dp(12), dp(12), dp(10), dp(12))
+            background = panel()
         }
-
-        box.addView(text(title, 12f, muted))
-        box.addView(gap(8))
-        box.addView(text(value, 23f, white, true))
-        box.addView(gap(5))
-        box.addView(text(detail, 11f, accent))
-
+        box.addView(label(title, 11f, muted))
+        box.addView(label(value, 21f, white, true))
+        box.addView(label(note, 10f, red))
         parent.addView(
             box,
-            LinearLayout.LayoutParams(0, dp(112), 1f).apply {
-                marginEnd = dp(7)
+            LinearLayout.LayoutParams(0, -2, 1f).apply {
+                marginEnd = dp(6)
             }
         )
-    }
-
-    private fun addAction(
-        parent: LinearLayout,
-        icon: String,
-        title: String,
-        detail: String,
-        action: () -> Unit
-    ) {
-        val box = column().apply {
-            setPadding(dp(13), dp(15), dp(8), dp(13))
-            background = rounded(card)
-            isClickable = true
-            setOnClickListener { action() }
-        }
-
-        box.addView(text(icon, 25f, red, true))
-        box.addView(gap(9))
-        box.addView(text(title, 15f, white, true))
-        box.addView(gap(4))
-        box.addView(text(detail, 11f, muted))
-
-        parent.addView(
-            box,
-            LinearLayout.LayoutParams(0, dp(112), 1f).apply {
-                marginEnd = dp(8)
-                bottomMargin = dp(8)
-            }
-        )
-    }
-
-    private fun addRow(
-        parent: LinearLayout,
-        left: Triple<String, String, String>,
-        right: Triple<String, String, String>,
-        leftAction: () -> Unit,
-        rightAction: () -> Unit
-    ) {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-
-        addAction(row, left.first, left.second, left.third, leftAction)
-        addAction(row, right.first, right.second, right.third, rightAction)
-        parent.addView(row)
     }
 
     private fun showHome() {
-        base("Dashboard", "YOUR STORE, SMARTER EVERY DAY")
+        openScreen("Dashboard", "YOUR STORE AT A GLANCE")
 
-        val content = findContent()
-        content.addView(gap(4))
-
-        val sales = column().apply {
-            setPadding(dp(18), dp(18), dp(18), dp(18))
-            background = rounded(Color.rgb(115, 8, 24))
+        val today = sales.filter {
+            isToday(it.optLong("time"))
         }
+        val total = today.sumOf { it.optDouble("total") }
+        val profit = today.sumOf { it.optDouble("profit") }
+        val low = products.count { it.qty <= lowStockLimit }
 
-        sales.addView(text("TODAY'S SALES", 13f, Color.LTGRAY, true))
-        sales.addView(gap(8))
-        sales.addView(text("₹ 0.00", 32f, white, true))
-        sales.addView(gap(5))
-        sales.addView(text("Sales total will appear after billing", 12f, white))
-
-        content.addView(sales)
-        content.addView(gap(14))
-
-        val metrics = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        val banner = vertical().apply {
+            setPadding(dp(17), dp(16), dp(17), dp(16))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.rgb(125, 8, 28), red)
+            ).apply { cornerRadius = dp(16).toFloat() }
         }
+        banner.addView(label("TODAY'S SALES", 12f, white, true))
+        banner.addView(label(money(total), 31f, white, true))
+        banner.addView(label("${today.size} completed bills today", 12f, white))
+        content.addView(banner)
 
-        addCard(metrics, "PRODUCTS", "0", "Manage inventory")
-        addCard(metrics, "LOW STOCK", "0", "Restock alerts", Color.YELLOW)
-        addCard(metrics, "ORDERS", "0", "Today's orders", Color.CYAN)
-        content.addView(metrics)
+        section(content, "STORE OVERVIEW")
+        val row = LinearLayout(this)
+        infoCard(row, "PRODUCTS", "${products.size}", "In inventory")
+        infoCard(row, "LOW STOCK", "$low", "Need attention")
+        infoCard(row, "ORDERS", "${orders.size}", "Saved orders")
+        content.addView(row)
 
-        content.addView(gap(22))
-        content.addView(text("QUICK ACTIONS", 17f, white, true))
-        content.addView(gap(12))
+        section(content, "QUICK ACTIONS")
+        button(content, "＋   Add Product") { productDialog(null) }
+        button(content, "₹   Start New Billing") { showBilling() }
+        button(content, "▦   Search / Scan Barcode") { scanBarcode() }
+        button(content, "➜   Customer & Delivery Orders") { showOrders() }
 
-        addRow(
-            content,
-            Triple("＋", "Add Product", "New stock item"),
-            Triple("₹", "New Billing", "Create a bill"),
-            { showStock() },
-            { showBilling() }
-        )
+        section(content, "TODAY'S PERFORMANCE")
+        content.addView(label("Sales: ${money(total)}", 15f))
+        content.addView(label("Estimated profit: ${money(profit)}", 14f, muted))
+        content.addView(label("Low-stock products: $low", 14f, muted))
 
-        addRow(
-            content,
-            Triple("▦", "Scan Barcode", "Find a product"),
-            Triple("➜", "Delivery Orders", "Manage orders"),
-            { scanBarcode() },
-            { showOrders() }
-        )
-
-        content.addView(gap(14))
-        content.addView(text("STORE TOOLS", 17f, white, true))
-        content.addView(gap(10))
-
-        val tools = column().apply {
-            setPadding(dp(15), dp(15), dp(15), dp(15))
-            background = rounded(card)
+        section(content, "LOW STOCK ALERTS")
+        val lowItems = products.filter { it.qty <= lowStockLimit }
+        if (lowItems.isEmpty()) {
+            content.addView(label("All products are above the alert limit.", 13f, muted))
+        } else {
+            lowItems.take(5).forEach {
+                content.addView(
+                    label("${it.name}  •  Qty: ${it.qty}", 14f, Color.YELLOW)
+                )
+            }
         }
-
-        tools.addView(text("📈  Sales & Reports", 16f, white, true))
-        tools.addView(gap(5))
-        tools.addView(text("View your store performance and totals.", 12f, muted))
-        tools.addView(gap(12))
-        tools.addView(text("⚙  Store Settings", 16f, white, true))
-        tools.isClickable = true
-        tools.setOnClickListener { showMore() }
-        content.addView(tools)
-
-        content.addView(gap(18))
-        content.addView(
-            text("JANTA KIRANA STORE  •  SMART SHOP MANAGEMENT", 10f, muted)
-        )
     }
 
-    private fun findContent(): LinearLayout {
-        val scroll = root.getChildAt(1) as ScrollView
-        return scroll.getChildAt(0) as LinearLayout
+    private fun isToday(ts: Long): Boolean {
+        val a = java.text.SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(ts))
+        val b = java.text.SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+        return a == b
+    }
+
+    private fun productDialog(existing: Product?) {
+        val box = vertical().apply { setPadding(dp(18), dp(8), dp(18), dp(4)) }
+
+        fun field(hint: String, value: String = "", numeric: Boolean = false): EditText {
+            return EditText(this).apply {
+                this.hint = hint
+                setSingleLine(true)
+                setText(value)
+                if (numeric) inputType = InputType.TYPE_CLASS_NUMBER or
+                    InputType.TYPE_NUMBER_FLAG_DECIMAL
+            }
+        }
+
+        val name = field("Product name", existing?.name ?: "")
+        val barcode = field("Barcode (optional)", existing?.barcode ?: "")
+        val buy = field("Purchase price", existing?.buy?.toString() ?: "", true)
+        val sell = field("Selling price", existing?.sell?.toString() ?: "", true)
+        val qty = field("Stock quantity", existing?.qty?.toString() ?: "", true)
+
+        listOf(name, barcode, buy, sell, qty).forEach { box.addView(it) }
+
+        AlertDialog.Builder(this)
+            .setTitle(if (existing == null) "Add Product" else "Edit Product")
+            .setView(box)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val n = name.text.toString().trim()
+                val b = buy.text.toString().toDoubleOrNull()
+                val s = sell.text.toString().toDoubleOrNull()
+                val q = qty.text.toString().toIntOrNull()
+
+                if (n.isBlank() || b == null || s == null || q == null ||
+                    b < 0 || s < 0 || q < 0
+                ) {
+                    toast("Enter a valid name, prices and quantity")
+                    return@setPositiveButton
+                }
+
+                if (existing == null) {
+                    products.add(
+                        Product(
+                            java.util.UUID.randomUUID().toString(),
+                            n, barcode.text.toString().trim(), b, s, q
+                        )
+                    )
+                } else {
+                    existing.name = n
+                    existing.barcode = barcode.text.toString().trim()
+                    existing.buy = b
+                    existing.sell = s
+                    existing.qty = q
+                }
+
+                saveData()
+                showStock()
+            }
+            .show()
     }
 
     private fun showStock() {
-        base("Inventory", "PRODUCT AND STOCK MANAGEMENT")
-        val c = findContent()
+        openScreen("Inventory", "PRODUCTS • PRICES • STOCK")
 
-        c.addView(text("Your product list will appear here.", 15f, muted))
-        c.addView(gap(16))
+        val search = EditText(this).apply {
+            hint = "Search product or barcode..."
+            setSingleLine(true)
+        }
+        content.addView(search)
+        button(content, "＋   Add New Product") { productDialog(null) }
 
-        addAction(c, "＋", "Add Product", "Start adding products") {
-            Toast.makeText(this, "Product form will be added next", Toast.LENGTH_SHORT).show()
+        val list = vertical()
+        content.addView(list)
+
+        fun refresh(query: String = "") {
+            list.removeAllViews()
+            val filtered = products.filter {
+                it.name.contains(query, true) ||
+                    it.barcode.contains(query, true)
+            }
+
+            if (filtered.isEmpty()) {
+                list.addView(label("No products found. Add your first product.", 14f, muted))
+            }
+
+            filtered.forEach { p ->
+                val box = vertical().apply {
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                    background = panel()
+                }
+                box.addView(label(p.name, 16f, white, true))
+                box.addView(label("Barcode: ${p.barcode.ifBlank { "Not set" }}", 11f, muted))
+                box.addView(label("Buy ${money(p.buy)}  •  Sell ${money(p.sell)}", 13f))
+                box.addView(
+                    label(
+                        "Stock: ${p.qty}" +
+                            if (p.qty <= lowStockLimit) "  ⚠ LOW STOCK" else "  • In stock",
+                        13f,
+                        if (p.qty <= lowStockLimit) Color.YELLOW else Color.GREEN
+                    )
+                )
+
+                button(box, "Edit Product") { productDialog(p) }
+                button(box, "Delete Product") {
+                    AlertDialog.Builder(this)
+                        .setTitle("Delete ${p.name}?")
+                        .setMessage("This product will be removed from inventory.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Delete") { _, _ ->
+                            products.remove(p)
+                            saveData()
+                            showStock()
+                        }
+                        .show()
+                }
+
+                list.addView(box)
+                list.addView(gap(8))
+            }
         }
 
-        addAction(c, "▦", "Scan Barcode", "Scan product code") {
-            scanBarcode()
-        }
+        search.addTextChangedListener(
+            object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    refresh(s?.toString() ?: "")
+                }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            }
+        )
+
+        refresh()
     }
 
     private fun showBilling() {
-        base("Billing", "CREATE A CUSTOMER BILL")
-        val c = findContent()
+        openScreen("Billing", "ADD PRODUCTS • CHECK OUT")
 
-        c.addView(text("No products added yet.", 15f, muted))
-        c.addView(gap(12))
+        val search = EditText(this).apply {
+            hint = "Search product or barcode..."
+            setSingleLine(true)
+        }
+        content.addView(search)
 
-        addAction(c, "▦", "Scan Barcode", "Find a product") {
-            scanBarcode()
+        val productList = vertical()
+        content.addView(productList)
+
+        val cartTitle = label("CURRENT CART", 18f, white, true)
+        content.addView(cartTitle)
+        val cartList = vertical()
+        content.addView(cartList)
+        val totalLabel = label("Total: ₹0.00", 23f, red, true)
+        content.addView(totalLabel)
+
+        fun refreshCart() {
+            cartList.removeAllViews()
+            var total = 0.0
+            cart.toMap().forEach { (id, qty) ->
+                val p = products.find { it.id == id } ?: return@forEach
+                total += p.sell * qty
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                row.addView(
+                    label("${p.name} × $qty  ${money(p.sell * qty)}", 13f),
+                    LinearLayout.LayoutParams(0, -2, 1f)
+                )
+                val minus = label(" − ", 22f, red, true)
+                minus.setOnClickListener {
+                    val newQty = (cart[id] ?: 0) - 1
+                    if (newQty <= 0) cart.remove(id) else cart[id] = newQty
+                    refreshCart()
+                }
+                val plus = label(" + ", 22f, red, true)
+                plus.setOnClickListener {
+                    if ((cart[id] ?: 0) < p.qty) {
+                        cart[id] = (cart[id] ?: 0) + 1
+                    } else toast("Not enough stock")
+                    refreshCart()
+                }
+                row.addView(minus)
+                row.addView(plus)
+                cartList.addView(row)
+            }
+            totalLabel.text = "Total: ${money(total)}"
         }
 
-        addAction(c, "＋", "Add Product", "Add an inventory item") {
-            showStock()
+        fun refreshProducts(query: String = "") {
+            productList.removeAllViews()
+            products.filter {
+                it.qty > 0 && (
+                    it.name.contains(query, true) ||
+                    it.barcode.contains(query, true)
+                )
+            }.take(30).forEach { p ->
+                button(
+                    productList,
+                    "${p.name}  •  ${money(p.sell)}  •  Stock ${p.qty}  •  ADD"
+                ) {
+                    val current = cart[p.id] ?: 0
+                    if (current < p.qty) {
+                        cart[p.id] = current + 1
+                        refreshCart()
+                    } else toast("Not enough stock")
+                }
+            }
         }
 
-        c.addView(gap(12))
-        c.addView(text("TOTAL: ₹ 0.00", 23f, red, true))
-        c.addView(gap(8))
-        c.addView(text("Add products before creating a bill.", 13f, muted))
+        search.addTextChangedListener(
+            object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    refreshProducts(s?.toString() ?: "")
+                }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            }
+        )
+
+        button(content, "▦   Scan Barcode") { scanBarcode() }
+        button(content, "Clear Cart") {
+            cart.clear()
+            refreshCart()
+        }
+        button(content, "CHECKOUT / SAVE BILL") {
+            if (cart.isEmpty()) {
+                toast("Add products to the cart first")
+            } else {
+                checkout()
+            }
+        }
+
+        refreshProducts()
+        refreshCart()
+    }
+
+    private fun checkout() {
+        val customer = EditText(this).apply { hint = "Customer name (optional)" }
+        val phone = EditText(this).apply {
+            hint = "Customer phone (optional)"
+            inputType = InputType.TYPE_CLASS_PHONE
+        }
+        val address = EditText(this).apply { hint = "Delivery address (optional)" }
+
+        val box = vertical().apply {
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+            addView(customer)
+            addView(phone)
+            addView(address)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Complete Sale")
+            .setMessage("Save bill and reduce stock?")
+            .setView(box)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save Bill") { _, _ ->
+                if (cart.isEmpty()) return@setPositiveButton
+
+                var total = 0.0
+                var profit = 0.0
+                val items = JSONArray()
+
+                for ((id, qty) in cart) {
+                    val p = products.find { it.id == id } ?: continue
+                    if (qty > p.qty) {
+                        toast("Stock changed. Check the cart.")
+                        return@setPositiveButton
+                    }
+
+                    total += p.sell * qty
+                    profit += (p.sell - p.buy) * qty
+
+                    items.put(JSONObject().apply {
+                        put("id", p.id)
+                        put("name", p.name)
+                        put("qty", qty)
+                        put("price", p.sell)
+                        put("buy", p.buy)
+                    })
+                }
+
+                val sale = JSONObject().apply {
+                    put("id", java.util.UUID.randomUUID().toString())
+                    put("time", now())
+                    put("total", total)
+                    put("profit", profit)
+                    put("customer", customer.text.toString().trim())
+                    put("phone", phone.text.toString().trim())
+                    put("address", address.text.toString().trim())
+                    put("items", items)
+                }
+
+                cart.forEach { (id, qty) ->
+                    products.find { it.id == id }?.let { it.qty -= qty }
+                }
+
+                sales.add(sale)
+
+                if (address.text.toString().trim().isNotEmpty() ||
+                    customer.text.toString().trim().isNotEmpty()
+                ) {
+                    orders.add(JSONObject().apply {
+                        put("saleId", sale.optString("id"))
+                        put("time", sale.optLong("time"))
+                        put("customer", customer.text.toString().trim())
+                        put("phone", phone.text.toString().trim())
+                        put("address", address.text.toString().trim())
+                        put("total", total)
+                        put("status", "Pending")
+                    })
+                }
+
+                cart.clear()
+                saveData()
+
+                AlertDialog.Builder(this)
+                    .setTitle("Bill Saved")
+                    .setMessage(
+                        "Total: ${money(total)}\n" +
+                            "Estimated profit: ${money(profit)}\n" +
+                            "Bill time: ${date(sale.optLong("time"))}"
+                    )
+                    .setPositiveButton("OK") { _, _ -> showHome() }
+                    .show()
+            }
+            .show()
     }
 
     private fun showOrders() {
-        base("Delivery Orders", "MANAGE CUSTOMER DELIVERIES")
-        val c = findContent()
+        openScreen("Delivery Orders", "CUSTOMERS • LOCAL ORDER HISTORY")
+        button(content, "＋   Create Order Through Billing") { showBilling() }
 
-        c.addView(text("No delivery orders yet.", 16f, muted))
-        c.addView(gap(12))
-        c.addView(text("Customer orders can be connected in the next step.", 13f, muted))
+        if (orders.isEmpty()) {
+            content.addView(label("No customer orders saved yet.", 14f, muted))
+        }
+
+        orders.asReversed().forEach { o ->
+            val box = vertical().apply {
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = panel()
+            }
+
+            box.addView(label(o.optString("customer", "Customer"), 16f, white, true))
+            box.addView(label(o.optString("phone"), 13f, muted))
+            box.addView(label(o.optString("address"), 13f, muted))
+            box.addView(label(money(o.optDouble("total")), 16f, red, true))
+            box.addView(label(date(o.optLong("time")), 11f, muted))
+            box.addView(label("Status: ${o.optString("status")}", 13f))
+
+            button(box, "Update Order Status") {
+                val statuses = arrayOf("Pending", "Out for delivery", "Delivered", "Cancelled")
+                AlertDialog.Builder(this)
+                    .setTitle("Order status")
+                    .setItems(statuses) { _, which ->
+                        o.put("status", statuses[which])
+                        saveData()
+                        showOrders()
+                    }
+                    .show()
+            }
+
+            content.addView(box)
+            content.addView(gap(8))
+        }
+    }
+
+    private fun showReports() {
+        openScreen("Reports", "SALES • PROFIT • BILL HISTORY")
+
+        val total = sales.sumOf { it.optDouble("total") }
+        val profit = sales.sumOf { it.optDouble("profit") }
+        val todaySales = sales.filter { isToday(it.optLong("time")) }
+            .sumOf { it.optDouble("total") }
+
+        content.addView(label("All-time sales: ${money(total)}", 21f, white, true))
+        content.addView(label("Today's sales: ${money(todaySales)}", 17f, red, true))
+        content.addView(label("Estimated gross profit: ${money(profit)}", 16f, muted))
+        content.addView(label("Completed bills: ${sales.size}", 15f, muted))
+
+        section(content, "BILL HISTORY")
+
+        if (sales.isEmpty()) {
+            content.addView(label("No bills saved yet.", 14f, muted))
+        }
+
+        sales.asReversed().take(100).forEach { s ->
+            content.addView(
+                label(
+                    "${date(s.optLong("time"))}\n" +
+                        "${s.optString("customer").ifBlank { "Walk-in customer" }}  •  " +
+                        money(s.optDouble("total")),
+                    14f
+                )
+            )
+        }
     }
 
     private fun showMore() {
-        base("More", "STORE MANAGEMENT")
-        val c = findContent()
+        openScreen("More", "STORE SETTINGS • REPORTS • BACKUP")
 
-        c.addView(text("Janta Kirana Store", 20f, white, true))
-        c.addView(gap(10))
-        c.addView(text("App version 1.0", 13f, muted))
-        c.addView(gap(14))
-        c.addView(text("Next upgrades", 17f, white, true))
-        c.addView(gap(10))
-        c.addView(text("• Saved inventory\n• Working billing and receipts\n• Sales reports\n• Customer delivery orders\n• Data backup", 15f, muted))
+        button(content, "📊   Sales & Profit Reports") { showReports() }
+        button(content, "⚙   Store Settings") { settingsDialog() }
+        button(content, "💾   Export Data Backup") { exportBackup() }
+        button(content, "⚠   Low Stock Products") {
+            openScreen("Low Stock", "PRODUCTS TO RESTOCK")
+            val low = products.filter { it.qty <= lowStockLimit }
+            if (low.isEmpty()) {
+                content.addView(label("No low-stock products.", 14f, muted))
+            }
+            low.forEach {
+                content.addView(
+                    label("${it.name}  •  Qty ${it.qty}", 15f, Color.YELLOW)
+                )
+            }
+        }
+        button(content, "ℹ   About This App") {
+            AlertDialog.Builder(this)
+                .setTitle(storeName)
+                .setMessage(
+                    "Offline-first store manager.\n\n" +
+                        "Products, bills and orders are saved on this phone.\n" +
+                        "Export backups regularly.\n\n" +
+                        "Online sync and online customer ordering are not connected."
+                )
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
+    private fun settingsDialog() {
+        val name = EditText(this).apply {
+            hint = "Store name"
+            setText(storeName)
+        }
+        val limit = EditText(this).apply {
+            hint = "Low stock warning quantity"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(lowStockLimit.toString())
+        }
+
+        val box = vertical().apply {
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+            addView(name)
+            addView(limit)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Store Settings")
+            .setView(box)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val n = name.text.toString().trim()
+                val l = limit.text.toString().toIntOrNull()
+
+                if (n.isNotBlank() && l != null && l >= 0) {
+                    storeName = n
+                    lowStockLimit = l
+                    saveData()
+                    showMore()
+                } else toast("Enter valid settings")
+            }
+            .show()
+    }
+
+    private fun exportBackup() {
+        val backup = JSONObject().apply {
+            put("app", "Janta Kirana Store")
+            put("exportedAt", date(now()))
+            put("storeName", storeName)
+            put("lowStockLimit", lowStockLimit)
+
+            val p = JSONArray()
+            products.forEach {
+                p.put(JSONObject().apply {
+                    put("id", it.id)
+                    put("name", it.name)
+                    put("barcode", it.barcode)
+                    put("buy", it.buy)
+                    put("sell", it.sell)
+                    put("qty", it.qty)
+                })
+            }
+
+            val s = JSONArray()
+            sales.forEach { s.put(it) }
+
+            val o = JSONArray()
+            orders.forEach { o.put(it) }
+
+            put("products", p)
+            put("sales", s)
+            put("orders", o)
+        }
+
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Janta Kirana Store Backup")
+            putExtra(Intent.EXTRA_TEXT, backup.toString(2))
+        }
+
+        startActivity(Intent.createChooser(send, "Save or share backup"))
     }
 
     private fun scanBarcode() {
         try {
-            GmsBarcodeScanning.getClient(this)
+            com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+                .getClient(this)
                 .startScan()
                 .addOnSuccessListener { barcode ->
-                    val value = barcode.rawValue ?: "Unknown"
-                    Toast.makeText(
-                        this,
-                        "Scanned code: $value",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    val value = barcode.rawValue ?: ""
+                    if (value.isBlank()) {
+                        toast("No barcode found")
+                        return@addOnSuccessListener
+                    }
+
+                    val existing = products.find { it.barcode == value }
+                    if (existing != null) {
+                        AlertDialog.Builder(this)
+                            .setTitle(existing.name)
+                            .setMessage(
+                                "Barcode: $value\n" +
+                                    "Price: ${money(existing.sell)}\n" +
+                                    "Stock: ${existing.qty}"
+                            )
+                            .setPositiveButton("OK", null)
+                            .setNeutralButton("Edit") { _, _ ->
+                                productDialog(existing)
+                            }
+                            .show()
+                    } else {
+                        productDialog(
+                            Product(
+                                java.util.UUID.randomUUID().toString(),
+                                "", value, 0.0, 0.0, 0
+                            )
+                        )
+                    }
                 }
                 .addOnFailureListener {
-                    Toast.makeText(
-                        this,
-                        "Barcode scan failed",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    toast("Barcode scan failed")
                 }
         } catch (e: Exception) {
-            Toast.makeText(this, "Scanner unavailable", Toast.LENGTH_LONG).show()
+            toast("Scanner unavailable. Check Google Play services.")
         }
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 }
