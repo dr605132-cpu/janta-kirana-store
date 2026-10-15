@@ -211,7 +211,7 @@ class MainActivity : Activity() {
             .apply()
     }
 
-    private fun openScreen(
+        private fun openScreen(
         title: String,
         subtitle: String = ""
     ) {
@@ -241,4 +241,56 @@ class MainActivity : Activity() {
 
         root.addView(
             scroll,
-            LinearLayout.LayoutParams(-1, 0, 1f
+            LinearLayout.LayoutParams(-1, 0, 1f)
+        )
+
+        val nav = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.rgb(20, 20, 25))
+        }
+
+        val names = listOf(
+            "⌂\nHome",
+            "▣\nStock",
+            "₹\nBilling",
+            "▤\nOrders",
+            "•••\nMore"
+        )
+
+        val titles = listOf(
+            "Dashboard",
+            "Inventory",
+            "Billing",
+            "Delivery Orders",
+            "More"
+        )
+
+        names.forEachIndexed { index, name ->
+            val t = label(
+                name,
+                11f,
+                if (title == titles[index]) red else muted,
+                true
+            )
+
+            t.gravity = Gravity.CENTER
+
+            t.setOnClickListener {
+                when (index) {
+                    0 -> showHome()
+                    1 -> showStock()
+                    2 -> showBilling()
+                    3 -> showOrders()
+                    else -> showMore()
+                }
+            }
+
+            nav.addView(
+                t,
+                LinearLayout.LayoutParams(0, dp(55), 1f)
+            )
+        }
+
+        root.addView(nav)
+        setContentView(root)
+    }
