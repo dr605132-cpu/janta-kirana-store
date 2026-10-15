@@ -1,8 +1,6 @@
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.google.gms.google-services")
 }
 
 android {
@@ -28,11 +26,6 @@ android {
 }
 
 dependencies {
-    // Existing barcode scanner — preserved
+    // Barcode scanner
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
-
-    // Firebase
-    implementation(platform("com.google.firebase:firebase-bom:34.0.0"))
-    implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-firestore")
 }
