@@ -27,6 +27,12 @@ private val black = Color.rgb(18, 18, 18)
 private val white = Color.WHITE
 private val muted = Color.rgb(190, 190, 190)
 
+private val bg = Color.rgb(12, 12, 16)
+private val card = Color.rgb(30, 30, 36)
+private val inputBg = Color.rgb(42, 42, 48)
+private val green = Color.rgb(46, 204, 113)
+private val yellow = Color.rgb(255, 193, 7)
+
     private val prefs by lazy {
         getSharedPreferences("janta_store_data", MODE_PRIVATE)
     }
@@ -332,19 +338,34 @@ private val muted = Color.rgb(190, 190, 190)
         hint: String,
         value: String = "",
         numeric: Boolean = false
-    ): EditText {
-        return EditText(this).apply {
-            this.hint = hint
-            setSingleLine(true)
-            setText(value)
+    return EditText(this).apply {
+    hint = hint
+    setSingleLine(true)
+    setText(value)
 
-            if (numeric) {
-                inputType =
-                    InputType.TYPE_CLASS_NUMBER or
-                    InputType.TYPE_NUMBER_FLAG_DECIMAL
-            }
-        }
+    setTextColor(Color.WHITE)
+    setHintTextColor(Color.LTGRAY)
+    textSize = 15f
+
+    setPadding(
+        dp(12),
+        dp(10),
+        dp(12),
+        dp(10)
+    )
+
+    background = GradientDrawable().apply {
+        setColor(inputBg)
+        cornerRadius = dp(10).toFloat()
+        setStroke(dp(1), Color.rgb(70, 70, 78))
     }
+
+    if (numeric) {
+        inputType =
+            InputType.TYPE_CLASS_NUMBER or
+            InputType.TYPE_NUMBER_FLAG_DECIMAL
+    }
+}
 
     val name = field(
         "Product name",
