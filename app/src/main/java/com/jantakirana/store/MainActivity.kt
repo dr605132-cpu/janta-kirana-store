@@ -81,17 +81,39 @@ private val yellow = Color.rgb(255, 193, 7)
             cornerRadius = dp(15).toFloat()
         }
 
-    private fun label(
-        value: String,
-        size: Float = 15f,
-        color: Int = white,
-        bold: Boolean = false
-    ) = TextView(this).apply {
-        text = value
-        textSize = size
-        setTextColor(color)
-        if (bold) setTypeface(null, Typeface.BOLD)
-        setPadding(dp(2), dp(5), dp(2), dp(5))
+        fun field(
+        hint: String,
+        value: String = "",
+        numeric: Boolean = false
+    ): EditText {
+        return EditText(this).apply {
+            this.hint = hint
+            setSingleLine(true)
+            setText(value)
+
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.LTGRAY)
+            textSize = 15f
+
+            setPadding(
+                dp(12),
+                dp(10),
+                dp(12),
+                dp(10)
+            )
+
+            background = GradientDrawable().apply {
+                setColor(inputBg)
+                cornerRadius = dp(10).toFloat()
+                setStroke(dp(1), Color.rgb(70, 70, 78))
+            }
+
+            if (numeric) {
+                inputType =
+                    InputType.TYPE_CLASS_NUMBER or
+                    InputType.TYPE_NUMBER_FLAG_DECIMAL
+            }
+        }
     }
 
     private fun gap(n: Int) = View(this).apply {
