@@ -211,7 +211,7 @@ class MainActivity : Activity() {
             .apply()
     }
 
-        private fun openScreen(
+    private fun openScreen(
         title: String,
         subtitle: String = ""
     ) {
@@ -294,3 +294,561 @@ class MainActivity : Activity() {
         root.addView(nav)
         setContentView(root)
     }
+
+    private fun button(
+        parent: LinearLayout,
+        title: String,
+        action: () -> Unit
+    ) {
+        val t = label(title, 15f, white, true).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(13), dp(12), dp(13))
+            background = GradientDrawable().apply {
+                setColor(red)
+                cornerRadius = dp(11).toFloat()
+            }
+            isClickable = true
+            setOnClickListener { action() }
+        }
+
+        parent.addView(
+            t,
+            LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(9)
+            }
+        )
+    }
+
+    private fun section(parent: LinearLayout, title: String) {
+        parent.addView(gap(12))
+        parent.addView(label(title, 18f, white, true))
+        parent.addView(gap(5))
+    }
+
+    private fun infoCard(
+        parent: LinearLayout,
+        title: String,
+        value: String,
+        note: String
+    ) {
+        val box = vertical().apply {
+            setPadding(dp(10), dp(12), dp(8), dp(12))
+            background = panel()
+        }
+
+        box.addView(label(title, 10f, muted))
+        box.addView(label(value, 19f, white, true))
+        box.addView(label(note, 10f, red))
+
+        parent.addView(
+            box,
+            LinearLayout.LayoutParams(0, -2, 1f).apply {
+                marginEnd = dp(6)
+            }
+        )
+    }
+
+    private fun showHome() {
+        openScreen("Dashboard", "YOUR STORE AT A GLANCE")
+
+        val today = sales.filter { isToday(it.optLong("time")) }
+        val total = today.sumOf { it.optDouble("total") }
+        val profit = today.sumOf { it.optDouble("profit") }
+        val low = products.count { it.qty <= lowStockLimit }
+
+        val banner = vertical().apply {
+            setPadding(dp(17), dp(16), dp(17), dp(16))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.rgb(125, 8, 28), red)
+            ).apply {
+                cornerRadius = dp(16).toFloat()
+            }
+        }
+
+        banner.addView(label("TODAY'S SALES", 12f, white, true))
+        banner.addView(label(money(total), 30f, white, true))
+        banner.addView(label("${today.size} bills today", 12f, white))
+        content.addView(banner)
+
+        section(content, "STORE OVERVIEW")
+
+        val row = LinearLayout(this)
+        infoCard(row, "PRODUCTS", "${products.size}", "Inventory")
+        infoCard(row, "LOW STOCK", "$low", "Attention")
+        infoCard(row, "ORDERS", "${orders.size}", "Saved")
+        content.addView(row)
+
+        section(content, "QUICK ACTIONS")
+
+        button(content, "＋  Add Product") {
+            productDialog(null)
+        }
+
+        button(content, "₹  Start New Billing") {
+            showBilling()
+        }
+
+        button(content, "▦  Search / Scan Barcode") {
+            scanBarcode()
+        }
+
+        button(content, "➜  Customer & Delivery Orders") {
+            showOrders()
+        }
+
+        section(content, "TODAY'S PERFORMANCE")
+        content.addView(label("Sales: ${money(total)}", 15f))
+        content.addView(label("Estimated profit: ${money(profit)}", 14f, muted))
+        content.addView(label("Low-stock products: $low", 14f, muted))
+
+        section(content, "LOW STOCK ALERTS")
+
+        val lowItems = products.filter { it.qty <= lowStockLimit }
+
+        if (lowItems.isEmpty()) {
+            content.addView(
+                label("All products are above the alert limit.", 13f, muted)
+            )
+        } else {
+            lowItems.take(5).forEach {
+                content.addView(
+                    label(
+                        "${it.name}  •  Qty: ${it.qty}",
+                        14f,
+                        yellow
+                    )
+                )
+            }
+        }
+    }
+
+    private fun isToday(ts: Long): Boolean {
+        val a = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(ts))
+        val b = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+        return a == b
+    }
+
+    private fun productDialog(
+        existing: Product?,
+        scannedBarcode: String = "",
+        suggestedName: String = ""
+    ) {
+        val box = vertical().apply {
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+        }
+
+        val name = field(
+            "Product name",
+            existing?.name ?: suggestedName
+        )
+
+        val barcode = field(
+            "Barcode",
+            existing?.barcode ?: scannedBarcode
+        )
+
+        val buy = field(
+            "Purchase price",
+            existing?.buy?.takeIf { it > 0 }?.toString() ?: "",
+            true
+        )
+
+        val sell = field(
+            "Selling price",
+            existing?.sell?.takeIf { it > 0 }?.toString() ?: "",
+            true
+        )
+
+        val qty = field(
+            "Stock quantity",
+            existing?.qty?.toString() ?: "",
+            true
+        )
+
+        listOf(name, barcode, buy, sell, qty).forEach {
+            box.addView(
+                it,
+                LinearLayout.LayoutParams(-1, -2).apply {
+                    bottomMargin = dp(7)
+                }
+            )
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(if (existing == null) "Add Product" else "Edit Product")
+            .setView(box)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener {
+                    val n = name.text.toString().trim()
+                    val code = barcode.text.toString().trim()
+                    val b = buy.text.toString().toDoubleOrNull()
+                    val s = sell.text.toString().toDoubleOrNull()
+                    val q = qty.text.toString().toIntOrNull()
+
+                    if (
+                        n.isBlank() || b == null || s == null || q == null ||
+                        b < 0 || s < 0 || q < 0
+                    ) {
+                        toast("Enter product name, valid prices and quantity")
+                        return@setOnClickListener
+                    }
+
+                    val duplicate = products.find {
+                        code.isNotBlank() &&
+                            it.barcode == code &&
+                            it.id != existing?.id
+                    }
+
+                    if (duplicate != null) {
+                        toast("Barcode already belongs to ${duplicate.name}")
+                        return@setOnClickListener
+                    }
+
+                    if (existing == null) {
+                        products.add(
+                            Product(UUID.randomUUID().toString(), n, code, b, s, q)
+                        )
+                    } else {
+                        existing.name = n
+                        existing.barcode = code
+                        existing.buy = b
+                        existing.sell = s
+                        existing.qty = q
+                    }
+
+                    saveData()
+                    dialog.dismiss()
+                    showStock()
+                }
+        }
+
+        dialog.show()
+    }
+
+    private fun showStock() {
+        openScreen("Inventory", "PRODUCTS • PRICES • STOCK")
+
+        val search = field("Search product or barcode...")
+        content.addView(search)
+
+        button(content, "＋  Add New Product") {
+            productDialog(null)
+        }
+
+        val list = vertical()
+        content.addView(list)
+
+        fun refresh(query: String = "") {
+            list.removeAllViews()
+
+            val filtered = products.filter {
+                it.name.contains(query, true) ||
+                    it.barcode.contains(query, true)
+            }
+
+            if (filtered.isEmpty()) {
+                list.addView(
+                    label("No products found. Add your first product.", 14f, muted)
+                )
+            }
+
+            filtered.forEach { p ->
+                val box = vertical().apply {
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                    background = panel()
+                }
+
+                box.addView(label(p.name, 16f, white, true))
+                box.addView(
+                    label(
+                        "Barcode: ${p.barcode.ifBlank { "Not set" }}",
+                        11f,
+                        muted
+                    )
+                )
+                box.addView(
+                    label(
+                        "Buy ${money(p.buy)}  •  Sell ${money(p.sell)}",
+                        13f
+                    )
+                )
+                box.addView(
+                    label(
+                        "Stock: ${p.qty}" +
+                            if (p.qty <= lowStockLimit) "  ⚠ LOW STOCK"
+                            else "  • In stock",
+                        13f,
+                        if (p.qty <= lowStockLimit) yellow else green
+                    )
+                )
+
+                button(box, "Edit Product") {
+                    productDialog(p)
+                }
+
+                button(box, "Delete Product") {
+                    AlertDialog.Builder(this)
+                        .setTitle("Delete ${p.name}?")
+                        .setMessage("Remove this product from inventory?")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Delete") { _, _ ->
+                            products.remove(p)
+                            cart.remove(p.id)
+                            saveData()
+                            showStock()
+                        }
+                        .show()
+                }
+
+                list.addView(box)
+                list.addView(gap(8))
+            }
+        }
+
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                refresh(s?.toString() ?: "")
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        refresh()
+    }
+
+    private fun showBilling() {
+        openScreen("Billing", "ADD PRODUCTS • CHECK OUT")
+
+        val search = field("Search product or barcode...")
+        content.addView(search)
+
+        val productList = vertical()
+        content.addView(productList)
+
+        content.addView(label("CURRENT CART", 18f, white, true))
+
+        val cartList = vertical()
+        content.addView(cartList)
+
+        val totalLabel = label("Total: ₹0.00", 23f, red, true)
+        content.addView(totalLabel)
+
+        fun refreshCart() {
+            cartList.removeAllViews()
+            var total = 0.0
+
+            cart.toMap().forEach { (id, qty) ->
+                val p = products.find { it.id == id } ?: return@forEach
+                total += p.sell * qty
+
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+
+                row.addView(
+                    label("${p.name} × $qty  ${money(p.sell * qty)}", 13f),
+                    LinearLayout.LayoutParams(0, -2, 1f)
+                )
+
+                val minus = label(" − ", 22f, red, true)
+                minus.setOnClickListener {
+                    val newQty = (cart[id] ?: 0) - 1
+                    if (newQty <= 0) cart.remove(id) else cart[id] = newQty
+                    refreshCart()
+                }
+
+                val plus = label(" + ", 22f, red, true)
+                plus.setOnClickListener {
+                    if ((cart[id] ?: 0) < p.qty) {
+                        cart[id] = (cart[id] ?: 0) + 1
+                    } else {
+                        toast("Not enough stock")
+                    }
+                    refreshCart()
+                }
+
+                row.addView(minus)
+                row.addView(plus)
+                cartList.addView(row)
+            }
+
+            totalLabel.text = "Total: ${money(total)}"
+        }
+
+        fun refreshProducts(query: String = "") {
+            productList.removeAllViews()
+
+            products.filter {
+                it.qty > 0 && (
+                    it.name.contains(query, true) ||
+                        it.barcode.contains(query, true)
+                    )
+            }.take(30).forEach { p ->
+                button(
+                    productList,
+                    "${p.name}  •  ${money(p.sell)}  •  Stock ${p.qty}  •  ADD"
+                ) {
+                    val current = cart[p.id] ?: 0
+                    if (current < p.qty) {
+                        cart[p.id] = current + 1
+                        refreshCart()
+                    } else {
+                        toast("Not enough stock")
+                    }
+                }
+            }
+        }
+
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                refreshProducts(s?.toString() ?: "")
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        button(content, "▦  Scan Barcode") {
+            scanBarcode()
+        }
+
+        button(content, "Clear Cart") {
+            cart.clear()
+            refreshCart()
+        }
+
+        button(content, "CHECKOUT / SAVE BILL") {
+            if (cart.isEmpty()) {
+                toast("Add products to the cart first")
+            } else {
+                checkout()
+            }
+        }
+
+        refreshProducts()
+        refreshCart()
+    }
+
+    private fun checkout() {
+        val customer = field("Customer name (optional)")
+        val phone = field("Customer phone (optional)").apply {
+            inputType = InputType.TYPE_CLASS_PHONE
+        }
+        val address = field("Delivery address (optional)")
+
+        val box = vertical().apply {
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+            addView(customer)
+            addView(phone)
+            addView(address)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Complete Sale")
+            .setMessage("Save bill and reduce stock?")
+            .setView(box)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save Bill") { _, _ ->
+                if (cart.isEmpty()) return@setPositiveButton
+
+                var total = 0.0
+                var profit = 0.0
+                val items = JSONArray()
+
+                for ((id, qty) in cart) {
+                    val p = products.find { it.id == id } ?: continue
+
+                    if (qty > p.qty) {
+                        toast("Stock changed. Check the cart.")
+                        return@setPositiveButton
+                    }
+
+                    total += p.sell * qty
+                    profit += (p.sell - p.buy) * qty
+
+                    items.put(JSONObject().apply {
+                        put("id", p.id)
+                        put("name", p.name)
+                        put("qty", qty)
+                        put("price", p.sell)
+                        put("buy", p.buy)
+                    })
+                }
+
+                val sale = JSONObject().apply {
+                    put("id", UUID.randomUUID().toString())
+                    put("time", now())
+                    put("total", total)
+                    put("profit", profit)
+                    put("customer", customer.text.toString().trim())
+                    put("phone", phone.text.toString().trim())
+                    put("address", address.text.toString().trim())
+                    put("items", items)
+                }
+
+                cart.forEach { (id, qty) ->
+                    products.find { it.id == id }?.let {
+                        it.qty -= qty
+                    }
+                }
+
+                sales.add(sale)
+
+                if (
+                    address.text.toString().trim().isNotEmpty() ||
+                    customer.text.toString().trim().isNotEmpty()
+                ) {
+                    orders.add(JSONObject().apply {
+                        put("saleId", sale.optString("id"))
+                        put("time", sale.optLong("time"))
+                        put("customer", customer.text.toString().trim())
+                        put("phone", phone.text.toString().trim())
+                        put("address", address.text.toString().trim())
+                        put("total", total)
+                        put("status", "Pending")
+                    })
+                }
+
+                cart.clear()
+                saveData()
+
+                AlertDialog.Builder(this)
+                    .setTitle("Bill Saved")
+                    .setMessage(
+                        "Total: ${money(total)}\n" +
+                            "Estimated profit: ${money(profit)}\n" +
+                            "Time: ${date(sale.optLong("time"))}"
+                    )
+                    .setPositiveButton("OK") { _, _ -> showHome() }
+                    .show()
+            }
+            .show()
+    }
+
+    private fun showOrders() {
+        openScreen("Delivery Orders", "CUSTOMERS • LOCAL ORDER HISTORY")
+
+        button(content, "＋  Create Order Through Billing") {
+            showBilling()
+        }
+
+        if (orders.isEmpty()) {
+            content.addView(label("No customer orders saved yet.", 14f, muted))
+        }
+
+        orders.asReversed().forEach { o ->
+            val box = vertical().apply {
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = panel()
+            }
+
+            box.addView(label(o.optString("customer", "Customer"), 16f, white, true))
+            box.addView(label(o.optString("phone"), 13f, muted))
+            box.addView(label(o.optString("address"), 13f, muted))
+            box.addView(label(money(o.optDouble("total")), 16f,
