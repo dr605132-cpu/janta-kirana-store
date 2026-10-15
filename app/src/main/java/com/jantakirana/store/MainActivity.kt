@@ -22,11 +22,10 @@ import java.net.URL
 import java.net.URLEncoder
 class MainActivity : Activity() {
 
-    private val bg = Color.rgb(8, 11, 16)
-    private val card = Color.rgb(20, 29, 41)
-    private val red = Color.rgb(245, 25, 48)
-    private val white = Color.WHITE
-    private val muted = Color.rgb(165, 178, 192)
+    private val red = Color.rgb(239, 35, 60)
+private val black = Color.rgb(18, 18, 18)
+private val white = Color.WHITE
+private val muted = Color.rgb(190, 190, 190)
 
     private val prefs by lazy {
         getSharedPreferences("janta_store_data", MODE_PRIVATE)
