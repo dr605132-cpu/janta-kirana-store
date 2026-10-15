@@ -320,65 +320,142 @@ class MainActivity : Activity() {
         return a == b
     }
 
-    private fun productDialog(existing: Product?) {
-        val box = vertical().apply { setPadding(dp(18), dp(8), dp(18), dp(4)) }
+    private fun productDialog(
+    existing: Product?,
+    scannedBarcode: String = "",
+    suggestedName: String = ""
+) {
+    val box = vertical().apply {
+        setPadding(dp(18), dp(8), dp(18), dp(4))
+    }
 
-        fun field(hint: String, value: String = "", numeric: Boolean = false): EditText {
-            return EditText(this).apply {
-                this.hint = hint
-                setSingleLine(true)
-                setText(value)
-                if (numeric) inputType = InputType.TYPE_CLASS_NUMBER or
+    fun field(
+        hint: String,
+        value: String = "",
+        numeric: Boolean = false
+    ): EditText {
+        return EditText(this).apply {
+            this.hint = hint
+            setSingleLine(true)
+            setText(value)
+
+            if (numeric) {
+                inputType =
+                    InputType.TYPE_CLASS_NUMBER or
                     InputType.TYPE_NUMBER_FLAG_DECIMAL
             }
         }
-
-        val name = field("Product name", existing?.name ?: "")
-        val barcode = field("Barcode (optional)", existing?.barcode ?: "")
-        val buy = field("Purchase price", existing?.buy?.toString() ?: "", true)
-        val sell = field("Selling price", existing?.sell?.toString() ?: "", true)
-        val qty = field("Stock quantity", existing?.qty?.toString() ?: "", true)
-
-        listOf(name, barcode, buy, sell, qty).forEach { box.addView(it) }
-
-        AlertDialog.Builder(this)
-            .setTitle(if (existing == null) "Add Product" else "Edit Product")
-            .setView(box)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Save") { _, _ ->
-                val n = name.text.toString().trim()
-                val b = buy.text.toString().toDoubleOrNull()
-                val s = sell.text.toString().toDoubleOrNull()
-                val q = qty.text.toString().toIntOrNull()
-
-                if (n.isBlank() || b == null || s == null || q == null ||
-                    b < 0 || s < 0 || q < 0
-                ) {
-                    toast("Enter a valid name, prices and quantity")
-                    return@setPositiveButton
-                }
-
-                if (existing == null) {
-                    products.add(
-                        Product(
-                            java.util.UUID.randomUUID().toString(),
-                            n, barcode.text.toString().trim(), b, s, q
-                        )
-                    )
-                } else {
-                    existing.name = n
-                    existing.barcode = barcode.text.toString().trim()
-                    existing.buy = b
-                    existing.sell = s
-                    existing.qty = q
-                }
-
-                saveData()
-                showStock()
-            }
-            .show()
     }
 
+    val name = field(
+        "Product name",
+        existing?.name ?: suggestedName
+    )
+
+    val barcode = field(
+        "Barcode",
+        existing?.barcode ?: scannedBarcode
+    )
+
+    val buy = field(
+        "Purchase price",
+        existing?.buy?.takeIf { it > 0 }?.toString() ?: "",
+        true
+    )
+
+    val sell = field(
+        "Selling price",
+        existing?.sell?.takeIf { it > 0 }?.toString() ?: "",
+        true
+    )
+
+    val qty = field(
+        "Stock quantity",
+        existing?.qty?.takeIf { it > 0 }?.toString() ?: "",
+        true
+    )
+
+    listOf(name, barcode, buy, sell, qty).forEach {
+        box.addView(it)
+    }
+
+    AlertDialog.Builder(this)
+        .setTitle(
+            if (existing == null) "Add Product"
+            else "Edit Product"
+        )
+        .setView(box)
+        .setNegativeButton("Cancel", null)
+        .setPositiveButton("Save", null)
+        .create()
+        .also { dialog ->
+
+            dialog.setOnShowListener {
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    .setOnClickListener {
+
+                        val n = name.text.toString().trim()
+                        val code = barcode.text.toString().trim()
+                        val b = buy.text.toString().toDoubleOrNull()
+                        val s = sell.text.toString().toDoubleOrNull()
+                        val q = qty.text.toString().toIntOrNull()
+
+                        if (
+                            n.isBlank() ||
+                            b == null ||
+                            s == null ||
+                            q == null ||
+                            b < 0 ||
+                            s < 0 ||
+                            q < 0
+                        ) {
+                            toast(
+                                "Enter product name, valid prices and quantity"
+                            )
+                            return@setOnClickListener
+                        }
+
+                        val duplicate = products.find {
+                            it.barcode.isNotBlank() &&
+                            it.barcode == code &&
+                            it.id != existing?.id
+                        }
+
+                        if (duplicate != null) {
+                            toast(
+                                "This barcode already belongs to ${duplicate.name}"
+                            )
+                            return@setOnClickListener
+                        }
+
+                        if (existing == null) {
+                            products.add(
+                                Product(
+                                    java.util.UUID.randomUUID().toString(),
+                                    n,
+                                    code,
+                                    b,
+                                    s,
+                                    q
+                                )
+                            )
+                        } else {
+                            existing.name = n
+                            existing.barcode = code
+                            existing.buy = b
+                            existing.sell = s
+                            existing.qty = q
+                        }
+
+                        saveData()
+                        dialog.dismiss()
+                        showStock()
+                    }
+            }
+
+            dialog.show()
+        }
+}
     private fun showStock() {
         openScreen("Inventory", "PRODUCTS • PRICES • STOCK")
 
@@ -822,47 +899,164 @@ class MainActivity : Activity() {
     }
 
     private fun scanBarcode() {
-        try {
-            com.google.mlkit.vision.codescanner.GmsBarcodeScanning
-                .getClient(this)
-                .startScan()
-                .addOnSuccessListener { barcode ->
-                    val value = barcode.rawValue ?: ""
-                    if (value.isBlank()) {
-                        toast("No barcode found")
-                        return@addOnSuccessListener
+    try {
+        com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+            .getClient(this)
+            .startScan()
+            .addOnSuccessListener { barcode ->
+
+                val value = barcode.rawValue?.trim().orEmpty()
+
+                if (value.isBlank()) {
+                    toast("No barcode found")
+                    return@addOnSuccessListener
+                }
+
+                // Step 1: Pehle apne phone ki inventory check karo.
+                val existing = products.find {
+                    it.barcode == value
+                }
+
+                if (existing != null) {
+                    AlertDialog.Builder(this)
+                        .setTitle(existing.name)
+                        .setMessage(
+                            "Barcode: $value\n" +
+                            "Selling price: ${money(existing.sell)}\n" +
+                            "Available stock: ${existing.qty}"
+                        )
+                        .setPositiveButton("OK", null)
+                        .setNeutralButton("Edit Product") { _, _ ->
+                            productDialog(existing)
+                        }
+                        .show()
+
+                    return@addOnSuccessListener
+                }
+
+                // Step 2: Naya barcode hai; free product catalogue check karo.
+                val loading = AlertDialog.Builder(this)
+                    .setTitle("Searching Product")
+                    .setMessage(
+                        "Barcode: $value\n\n" +
+                        "Product details online search ho rahi hain..."
+                    )
+                    .setCancelable(false)
+                    .create()
+
+                loading.show()
+
+                Thread {
+                    var productName = ""
+
+                    try {
+                        val url = URL(
+                            "https://world.openfoodfacts.org/api/v2/product/" +
+                            URLEncoder.encode(value, "UTF-8") +
+                            "?fields=product_name"
+                        )
+
+                        val connection =
+                            url.openConnection() as HttpURLConnection
+
+                        connection.requestMethod = "GET"
+                        connection.connectTimeout = 8000
+                        connection.readTimeout = 8000
+                        connection.setRequestProperty(
+                            "User-Agent",
+                            "JantaKiranaStore/1.0 Android"
+                        )
+
+                        try {
+                            if (connection.responseCode in 200..299) {
+                                val response = connection.inputStream
+                                    .bufferedReader()
+                                    .use { it.readText() }
+
+                                val json =
+                                    org.json.JSONObject(response)
+
+                                if (
+                                    json.optInt("status", 0) == 1
+                                ) {
+                                    productName = json
+                                        .optJSONObject("product")
+                                        ?.optString("product_name")
+                                        ?.trim()
+                                        .orEmpty()
+                                }
+                            }
+                        } finally {
+                            connection.disconnect()
+                        }
+
+                    } catch (_: Exception) {
+                        // Internet unavailable or product not found.
                     }
 
-                    val existing = products.find { it.barcode == value }
-                    if (existing != null) {
-                        AlertDialog.Builder(this)
-                            .setTitle(existing.name)
-                            .setMessage(
-                                "Barcode: $value\n" +
-                                    "Price: ${money(existing.sell)}\n" +
-                                    "Stock: ${existing.qty}"
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) {
+                            return@runOnUiThread
+                        }
+
+                        loading.dismiss()
+
+                        val current = products.find {
+                            it.barcode == value
+                        }
+
+                        if (current != null) {
+                            AlertDialog.Builder(this)
+                                .setTitle(current.name)
+                                .setMessage(
+                                    "Barcode: $value\n" +
+                                    "Selling price: ${money(current.sell)}\n" +
+                                    "Stock: ${current.qty}"
+                                )
+                                .setPositiveButton("OK", null)
+                                .setNeutralButton("Edit") { _, _ ->
+                                    productDialog(current)
+                                }
+                                .show()
+
+                            return@runOnUiThread
+                        }
+
+                        if (productName.isNotBlank()) {
+                            AlertDialog.Builder(this)
+                                .setTitle("Product Found")
+                                .setMessage(
+                                    "Product name: $productName\n\n" +
+                                    "Purchase price, selling price aur stock " +
+                                    "confirm karke Save karo."
+                                )
+                                .setPositiveButton("Continue") { _, _ ->
+                                    productDialog(
+                                        existing = null,
+                                        scannedBarcode = value,
+                                        suggestedName = productName
+                                    )
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
+                        } else {
+                            // Product online nahi mila.
+                            // Barcode pehle se fill rahega.
+                            productDialog(
+                                existing = null,
+                                scannedBarcode = value
                             )
-                            .setPositiveButton("OK", null)
-                            .setNeutralButton("Edit") { _, _ ->
-                                productDialog(existing)
-                            }
-                            .show()
-                    } else {
-                        productDialog(
-                            Product(
-                                java.util.UUID.randomUUID().toString(),
-                                "", value, 0.0, 0.0, 0
-                            )
-                        )
+                        }
                     }
-                }
-                .addOnFailureListener {
-                    toast("Barcode scan failed")
-                }
-        } catch (e: Exception) {
-            toast("Scanner unavailable. Check Google Play services.")
-        }
+                }.start()
+            }
+            .addOnFailureListener {
+                toast("Barcode scan failed. Please try again.")
+            }
+    } catch (_: Exception) {
+        toast("Scanner unavailable. Check Google Play services.")
     }
+}
 
     private fun toast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
