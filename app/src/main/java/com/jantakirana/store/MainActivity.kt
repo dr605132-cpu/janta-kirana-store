@@ -17,7 +17,9 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 class MainActivity : Activity() {
 
     private val bg = Color.rgb(8, 11, 16)
