@@ -76,6 +76,22 @@ private val yellow = Color.rgb(255, 193, 7)
             .format(Date(ts))
 
     private fun panel(): GradientDrawable =
+    private fun label(
+    value: String,
+    size: Float = 15f,
+    color: Int = white,
+    bold: Boolean = false
+) = TextView(this).apply {
+    text = value
+    textSize = size
+    setTextColor(color)
+
+    if (bold) {
+        setTypeface(null, Typeface.BOLD)
+    }
+
+    setPadding(dp(2), dp(5), dp(2), dp(5))
+}
         GradientDrawable().apply {
             setColor(card)
             cornerRadius = dp(15).toFloat()
